@@ -1,9 +1,8 @@
 --[[ 
-    ASYLUM ELITE V12.1
-    - RESTORED: Target Mode Dropdown (All/Players/NPCs)
-    - RESTORED: Camera Aim / Snap Logic (Right-Click to Snap)
-    - ADDED: Chams, Box ESP, and Skeleton Logic
-    - FIXED: All Sliders and UI Components
+    ASYLUM ELITE V12.2
+    - ADDED: Target Part Selector (Head, Torso, HumanoidRootPart)
+    - ALL FEATURES PRESERVED: Method 1 & 2 Silent, Camera Snap, Chams, ESP
+    - ALL CONTROLS PRESERVED: All Sliders, Dropdowns, and Team/NPC Filters
 ]]
 
 local UIS = game:GetService("UserInputService")
@@ -29,8 +28,8 @@ getgenv().Config = {
     ESPEnabled = false,
     SkeletonEnabled = false,
     ChamsEnabled = false,
-    AimPart = "Head",
-    TargetMode = "All", -- RESTORED
+    AimPart = "Head", -- Default
+    TargetMode = "All",
 }
 
 --// FOV DRAWING
@@ -40,7 +39,7 @@ FOVCircle.Color = Color3.fromRGB(0, 150, 255)
 
 --// GUI CORE
 local ScreenGui = Instance.new("ScreenGui", LP.PlayerGui)
-ScreenGui.Name = "AsylumV12_1"; ScreenGui.ResetOnSpawn = false
+ScreenGui.Name = "AsylumV12_2"; ScreenGui.ResetOnSpawn = false
 
 local Main = Instance.new("Frame", ScreenGui)
 Main.Size = UDim2.new(0, 600, 0, 420); Main.Position = UDim2.new(0.5, -300, 0.5, -210); Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20); Main.BorderSizePixel = 0
@@ -86,13 +85,13 @@ local function AddToggle(parent, txt, key)
 end
 
 local function AddDropdown(parent, txt, options, key)
-    local f = Instance.new("Frame", parent); f.Size = UDim2.new(0.95, 0, 0, 45); f.BackgroundTransparency = 1; f.ZIndex = 10
+    local f = Instance.new("Frame", parent); f.Size = UDim2.new(0.95, 0, 0, 45); f.BackgroundTransparency = 1; f.ZIndex = 100 -- Ensure dropdowns are on top
     local btn = Instance.new("TextButton", f); btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundColor3 = Color3.fromRGB(35, 35, 50); btn.Text = txt .. ": " .. getgenv().Config[key]; btn.TextColor3 = Color3.new(1,1,1); btn.Font = "GothamSemibold"; btn.TextSize = 14; Instance.new("UICorner", btn)
-    local drop = Instance.new("Frame", f); drop.Size = UDim2.new(1, 0, 0, #options * 40); drop.Position = UDim2.new(0, 0, 1, 5); drop.BackgroundColor3 = Color3.fromRGB(25, 25, 35); drop.Visible = false; drop.ZIndex = 20; Instance.new("UICorner", drop)
+    local drop = Instance.new("Frame", f); drop.Size = UDim2.new(1, 0, 0, #options * 40); drop.Position = UDim2.new(0, 0, 1, 5); drop.BackgroundColor3 = Color3.fromRGB(25, 25, 35); drop.Visible = false; drop.ZIndex = 101; Instance.new("UICorner", drop)
     Instance.new("UIListLayout", drop)
     btn.MouseButton1Click:Connect(function() drop.Visible = not drop.Visible end)
     for _, opt in pairs(options) do
-        local o = Instance.new("TextButton", drop); o.Size = UDim2.new(1, 0, 0, 40); o.BackgroundTransparency = 1; o.Text = opt; o.TextColor3 = Color3.new(0.8, 0.8, 0.8); o.Font = "Gotham"; o.TextSize = 14; o.ZIndex = 21
+        local o = Instance.new("TextButton", drop); o.Size = UDim2.new(1, 0, 0, 40); o.BackgroundTransparency = 1; o.Text = opt; o.TextColor3 = Color3.new(0.8, 0.8, 0.8); o.Font = "Gotham"; o.TextSize = 14; o.ZIndex = 102
         o.MouseButton1Click:Connect(function() getgenv().Config[key] = opt; btn.Text = txt .. ": " .. opt; drop.Visible = false end)
     end
 end
@@ -111,8 +110,9 @@ local function AddSlider(parent, txt, min, max, key, decimal)
     bar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then local sliding = true; update(i); local con; con = UIS.InputChanged:Connect(function(ni) if ni.UserInputType == Enum.UserInputType.MouseMovement then update(ni) end end) UIS.InputEnded:Connect(function(ei) if ei.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false; con:Disconnect() end end) end end)
 end
 
--- POPULATE TABS
+--// POPULATE AIM TAB
 AddDropdown(Tabs.Aim.Frame, "TARGET MODE", {"All", "Players", "NPCs"}, "TargetMode")
+AddDropdown(Tabs.Aim.Frame, "TARGET PART", {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}, "AimPart") -- NEW: Target Part Selector
 AddToggle(Tabs.Aim.Frame, "Team Check", "TeamCheck")
 AddToggle(Tabs.Aim.Frame, "Wall Check", "WallCheck")
 AddToggle(Tabs.Aim.Frame, "Show FOV Circle", "ShowFOV")
@@ -122,10 +122,10 @@ AddSlider(Tabs.Aim.Frame, "Smoothness", 0.01, 1, "Smoothness", true)
 AddToggle(Tabs.Aim.Frame, "Silent Aim (Method 1)", "Method1_Silent")
 AddToggle(Tabs.Aim.Frame, "Silent Aim (Method 2)", "Method2_Silent")
 
+--// POPULATE VISUALS & MISC
 AddToggle(Tabs.Visuals.Frame, "Box ESP", "ESPEnabled")
 AddToggle(Tabs.Visuals.Frame, "Skeleton ESP", "SkeletonEnabled")
 AddToggle(Tabs.Visuals.Frame, "Chams (Glow)", "ChamsEnabled")
-
 AddToggle(Tabs.Misc.Frame, "Hitbox Expander", "HitboxEnabled")
 AddSlider(Tabs.Misc.Frame, "Hitbox Size", 2, 100, "HitboxSize")
 
@@ -156,7 +156,6 @@ RunService.RenderStepped:Connect(function()
             local targetPlayer = Players:GetPlayerFromCharacter(v)
             if getgenv().Config.TeamCheck and targetPlayer and targetPlayer.Team == LP.Team then continue end
 
-            -- TARGET MODE FILTER
             local mode = getgenv().Config.TargetMode
             local isValid = (mode == "All") or (mode == "Players" and targetPlayer) or (mode == "NPCs" and not targetPlayer)
             
@@ -174,13 +173,12 @@ RunService.RenderStepped:Connect(function()
     end
     LockedTarget = potential
     
-    -- CAMERA AIM LOGIC (RESTORED)
     if LockedTarget and IsRightClicking and getgenv().Config.CameraAim then
         Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, LockedTarget.Position), getgenv().Config.Smoothness)
     end
 end)
 
---// HOOKS & CONTROLS
+--// HOOKS
 local oldN; oldN = hookmetamethod(game, "__namecall", function(self, ...)
     local m = getnamecallmethod()
     if not checkcaller() and getgenv().Config.Method1_Silent and LockedTarget and (m == "Raycast") then
@@ -197,13 +195,14 @@ local oldI; oldI = hookmetamethod(game, "__index", function(self, idx)
     return oldI(self, idx)
 end)
 
+--// INPUT CONTROLS
 UIS.InputBegan:Connect(function(i, c)
     if not c and i.KeyCode == Enum.KeyCode.F5 then Main.Visible = not Main.Visible end
     if not c and i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = true end
 end)
 UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = false end end)
 
---// DRAGGING (Sidebar)
+--// DRAGGING
 local dragging, dStart, sPos
 Sidebar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dStart = i.Position; sPos = Main.Position end end)
 UIS.InputChanged:Connect(function(i) if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then local delta = i.Position - dStart; Main.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset + delta.X, sPos.Y.Scale, sPos.Y.Offset + delta.Y) end end)
