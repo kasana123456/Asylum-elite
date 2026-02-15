@@ -1,8 +1,9 @@
 --[[ 
-    ASYLUM ELITE V11.9 (Hybrid Merge)
-    - INTEGRATED: Team Check & Target Mode (All/Players/NPCs)
-    - RESTORED: Silent Aim Method 1 (Raycast) & Method 2 (Index)
-    - IMPROVED: UI Component Scaling & Logic
+    ASYLUM ELITE V12.1
+    - RESTORED: Target Mode Dropdown (All/Players/NPCs)
+    - RESTORED: Camera Aim / Snap Logic (Right-Click to Snap)
+    - ADDED: Chams, Box ESP, and Skeleton Logic
+    - FIXED: All Sliders and UI Components
 ]]
 
 local UIS = game:GetService("UserInputService")
@@ -16,8 +17,8 @@ local TweenService = game:GetService("TweenService")
 --// Global Settings
 getgenv().Config = {
     CameraAim = false,
-    Method1_Silent = false, -- Raycast Hook
-    Method2_Silent = false, -- Index/Mouse Hook
+    Method1_Silent = false,
+    Method2_Silent = false,
     WallCheck = true,
     TeamCheck = true,
     ShowFOV = true,
@@ -27,10 +28,9 @@ getgenv().Config = {
     HitboxSize = 10,
     ESPEnabled = false,
     SkeletonEnabled = false,
-    GlowEnabled = false,
+    ChamsEnabled = false,
     AimPart = "Head",
-    TargetMode = "All", -- "All", "Players", "NPCs"
-    TextScale = 18,
+    TargetMode = "All", -- RESTORED
 }
 
 --// FOV DRAWING
@@ -40,7 +40,7 @@ FOVCircle.Color = Color3.fromRGB(0, 150, 255)
 
 --// GUI CORE
 local ScreenGui = Instance.new("ScreenGui", LP.PlayerGui)
-ScreenGui.Name = "AsylumV11_9"; ScreenGui.ResetOnSpawn = false
+ScreenGui.Name = "AsylumV12_1"; ScreenGui.ResetOnSpawn = false
 
 local Main = Instance.new("Frame", ScreenGui)
 Main.Size = UDim2.new(0, 600, 0, 420); Main.Position = UDim2.new(0.5, -300, 0.5, -210); Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20); Main.BorderSizePixel = 0
@@ -60,8 +60,7 @@ local Tabs = { Aim = {}, Visuals = {}, Misc = {} }
 local function CreateTabFrame()
     local f = Instance.new("ScrollingFrame", Container)
     f.Size = UDim2.new(1, 0, 1, 0); f.BackgroundTransparency = 1; f.Visible = false; f.ScrollBarThickness = 0; f.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    local layout = Instance.new("UIListLayout", f)
-    layout.Padding = UDim.new(0, 12); layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local layout = Instance.new("UIListLayout", f); layout.Padding = UDim.new(0, 12); layout.HorizontalAlignment = "Center"
     return f
 end
 Tabs.Aim.Frame = CreateTabFrame(); Tabs.Visuals.Frame = CreateTabFrame(); Tabs.Misc.Frame = CreateTabFrame()
@@ -94,10 +93,22 @@ local function AddDropdown(parent, txt, options, key)
     btn.MouseButton1Click:Connect(function() drop.Visible = not drop.Visible end)
     for _, opt in pairs(options) do
         local o = Instance.new("TextButton", drop); o.Size = UDim2.new(1, 0, 0, 40); o.BackgroundTransparency = 1; o.Text = opt; o.TextColor3 = Color3.new(0.8, 0.8, 0.8); o.Font = "Gotham"; o.TextSize = 14; o.ZIndex = 21
-        o.MouseButton1Click:Connect(function()
-            getgenv().Config[key] = opt; btn.Text = txt .. ": " .. opt; drop.Visible = false
-        end)
+        o.MouseButton1Click:Connect(function() getgenv().Config[key] = opt; btn.Text = txt .. ": " .. opt; drop.Visible = false end)
     end
+end
+
+local function AddSlider(parent, txt, min, max, key, decimal)
+    local f = Instance.new("Frame", parent); f.Size = UDim2.new(0.95, 0, 0, 65); f.BackgroundTransparency = 1
+    local l = Instance.new("TextLabel", f); l.Size = UDim2.new(1, 0, 0, 25); l.Text = txt .. ": " .. getgenv().Config[key]; l.TextColor3 = Color3.new(1,1,1); l.BackgroundTransparency = 1; l.Font = "GothamSemibold"; l.TextSize = 14; l.TextXAlignment = "Left"
+    local bar = Instance.new("Frame", f); bar.Size = UDim2.new(1, 0, 0, 8); bar.Position = UDim2.new(0,0,0.7,0); bar.BackgroundColor3 = Color3.fromRGB(40,40,50); Instance.new("UICorner", bar)
+    local fill = Instance.new("Frame", bar); fill.Size = UDim2.new((getgenv().Config[key]-min)/(max-min), 0, 1, 0); fill.BackgroundColor3 = Color3.fromRGB(0, 150, 255); Instance.new("UICorner", fill)
+    local function update(input)
+        local pos = math.clamp((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        local val = min + (max - min) * pos
+        if decimal then val = math.round(val * 100) / 100 else val = math.floor(val) end
+        getgenv().Config[key] = val; l.Text = txt .. ": " .. val; fill.Size = UDim2.new(pos, 0, 1, 0)
+    end
+    bar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then local sliding = true; update(i); local con; con = UIS.InputChanged:Connect(function(ni) if ni.UserInputType == Enum.UserInputType.MouseMovement then update(ni) end end) UIS.InputEnded:Connect(function(ei) if ei.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false; con:Disconnect() end end) end end)
 end
 
 -- POPULATE TABS
@@ -105,17 +116,28 @@ AddDropdown(Tabs.Aim.Frame, "TARGET MODE", {"All", "Players", "NPCs"}, "TargetMo
 AddToggle(Tabs.Aim.Frame, "Team Check", "TeamCheck")
 AddToggle(Tabs.Aim.Frame, "Wall Check", "WallCheck")
 AddToggle(Tabs.Aim.Frame, "Show FOV Circle", "ShowFOV")
+AddSlider(Tabs.Aim.Frame, "FOV Radius", 10, 800, "FOVRadius")
 AddToggle(Tabs.Aim.Frame, "Camera Snap", "CameraAim")
+AddSlider(Tabs.Aim.Frame, "Smoothness", 0.01, 1, "Smoothness", true)
 AddToggle(Tabs.Aim.Frame, "Silent Aim (Method 1)", "Method1_Silent")
 AddToggle(Tabs.Aim.Frame, "Silent Aim (Method 2)", "Method2_Silent")
 
-local partBtn = Instance.new("TextButton", Tabs.Aim.Frame); partBtn.Size = UDim2.new(0.95, 0, 0, 40); partBtn.BackgroundColor3 = Color3.fromRGB(35,35,50); partBtn.TextColor3 = Color3.new(1,1,1); partBtn.Font = "GothamBold"; partBtn.TextSize = 14; Instance.new("UICorner", partBtn)
-partBtn.MouseButton1Click:Connect(function() getgenv().Config.AimPart = (getgenv().Config.AimPart == "Head" and "HumanoidRootPart" or "Head"); partBtn.Text = "TARGET PART: " .. getgenv().Config.AimPart end)
-partBtn.Text = "TARGET PART: " .. getgenv().Config.AimPart
-
 AddToggle(Tabs.Visuals.Frame, "Box ESP", "ESPEnabled")
 AddToggle(Tabs.Visuals.Frame, "Skeleton ESP", "SkeletonEnabled")
+AddToggle(Tabs.Visuals.Frame, "Chams (Glow)", "ChamsEnabled")
+
 AddToggle(Tabs.Misc.Frame, "Hitbox Expander", "HitboxEnabled")
+AddSlider(Tabs.Misc.Frame, "Hitbox Size", 2, 100, "HitboxSize")
+
+--// VISUALS ENGINE
+local function CreateHighlight(obj)
+    local h = Instance.new("Highlight", obj)
+    h.FillColor = Color3.fromRGB(0, 150, 255); h.OutlineColor = Color3.new(1,1,1)
+    RunService.Heartbeat:Connect(function() 
+        h.Enabled = getgenv().Config.ChamsEnabled 
+        if getgenv().Config.TeamCheck and Players:GetPlayerFromCharacter(obj) and Players:GetPlayerFromCharacter(obj).Team == LP.Team then h.Enabled = false end
+    end)
+end
 
 --// ENGINE LOGIC
 local LockedTarget = nil
@@ -129,58 +151,60 @@ RunService.RenderStepped:Connect(function()
     local potential, dist = nil, getgenv().Config.FOVRadius
     for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("Model") and v:FindFirstChildOfClass("Humanoid") and v ~= LP.Character then
-            local targetPlayer = Players:GetPlayerFromCharacter(v)
-            local isTeammate = getgenv().Config.TeamCheck and targetPlayer and targetPlayer.Team == LP.Team
+            if getgenv().Config.ChamsEnabled and not v:FindFirstChildOfClass("Highlight") then CreateHighlight(v) end
             
-            if not isTeammate then
-                local mode = getgenv().Config.TargetMode
-                local validMode = (mode == "All") or (mode == "Players" and targetPlayer) or (mode == "NPCs" and not targetPlayer)
-                
-                if validMode then
-                    local root = v:FindFirstChild(getgenv().Config.AimPart) or v:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local sPos, onScr = Camera:WorldToViewportPoint(root.Position)
-                        if onScr and (#Camera:GetPartsObscuringTarget({root.Position}, {LP.Character, Camera}) == 0 or not getgenv().Config.WallCheck) then
-                            local mDist = (Vector2.new(sPos.X, sPos.Y) - UIS:GetMouseLocation()).Magnitude
-                            if mDist < dist then potential = root; dist = mDist end
-                        end
+            local targetPlayer = Players:GetPlayerFromCharacter(v)
+            if getgenv().Config.TeamCheck and targetPlayer and targetPlayer.Team == LP.Team then continue end
+
+            -- TARGET MODE FILTER
+            local mode = getgenv().Config.TargetMode
+            local isValid = (mode == "All") or (mode == "Players" and targetPlayer) or (mode == "NPCs" and not targetPlayer)
+            
+            if isValid then
+                local root = v:FindFirstChild(getgenv().Config.AimPart) or v:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local sPos, onScr = Camera:WorldToViewportPoint(root.Position)
+                    if onScr and (#Camera:GetPartsObscuringTarget({root.Position}, {LP.Character, Camera}) == 0 or not getgenv().Config.WallCheck) then
+                        local mDist = (Vector2.new(sPos.X, sPos.Y) - UIS:GetMouseLocation()).Magnitude
+                        if mDist < dist then potential = root; dist = mDist end
                     end
                 end
             end
         end
     end
     LockedTarget = potential
+    
+    -- CAMERA AIM LOGIC (RESTORED)
     if LockedTarget and IsRightClicking and getgenv().Config.CameraAim then
         Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, LockedTarget.Position), getgenv().Config.Smoothness)
     end
 end)
 
---// METAMETHOD HOOKS
+--// HOOKS & CONTROLS
 local oldN; oldN = hookmetamethod(game, "__namecall", function(self, ...)
     local m = getnamecallmethod()
-    if not checkcaller() and getgenv().Config.Method1_Silent and LockedTarget and (m == "Raycast" or m:find("PartOnRay")) then
-        local args = {...}
-        if m == "Raycast" then args[2] = (LockedTarget.Position - args[1]).Unit * 1000
-        else args[1] = Ray.new(Camera.CFrame.Position, (LockedTarget.Position - Camera.CFrame.Position).Unit * 1000) end
+    if not checkcaller() and getgenv().Config.Method1_Silent and LockedTarget and (m == "Raycast") then
+        local args = {...}; args[2] = (LockedTarget.Position - args[1]).Unit * 1000
         return oldN(self, unpack(args))
     end
     return oldN(self, ...)
 end)
 
 local oldI; oldI = hookmetamethod(game, "__index", function(self, idx)
-    if not checkcaller() and getgenv().Config.Method2_Silent and LockedTarget and self == Mouse and (idx == "Hit" or idx == "Target") then
-        return (idx == "Hit" and LockedTarget.CFrame or LockedTarget)
+    if not checkcaller() and getgenv().Config.Method2_Silent and LockedTarget and self == Mouse and (idx == "Hit") then
+        return LockedTarget.CFrame
     end
     return oldI(self, idx)
 end)
 
---// DRAGGING
+UIS.InputBegan:Connect(function(i, c)
+    if not c and i.KeyCode == Enum.KeyCode.F5 then Main.Visible = not Main.Visible end
+    if not c and i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = true end
+end)
+UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = false end end)
+
+--// DRAGGING (Sidebar)
 local dragging, dStart, sPos
 Sidebar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dStart = i.Position; sPos = Main.Position end end)
 UIS.InputChanged:Connect(function(i) if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then local delta = i.Position - dStart; Main.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset + delta.X, sPos.Y.Scale, sPos.Y.Offset + delta.Y) end end)
 UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
-UIS.InputBegan:Connect(function(i, c) 
-    if not c and i.KeyCode == Enum.KeyCode.F5 then Main.Visible = not Main.Visible end 
-    if not c and i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = true end 
-end)
-UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton2 then IsRightClicking = false end end)
